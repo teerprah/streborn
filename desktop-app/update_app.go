@@ -156,7 +156,7 @@ func updateAssetKeys() []string {
 // has one archive per architecture, and an ARM64 app must never fall back to
 // the x86_64 one: it would swap itself for a binary its machine cannot run. A
 // release without the ARM64 archive then offers no update at all. A copy the
-// .deb installed updates from the next .deb only (see linuxpkg.go).
+// package manager installed updates from the same package format only (see linuxpkg.go).
 func updateAssetKeysFor(goos, goarch, pkg string) []string {
 	switch goos {
 	case "windows":
@@ -169,6 +169,12 @@ func updateAssetKeysFor(goos, goarch, pkg string) []string {
 		// anything is downloaded, and it used to leave no trace at all.
 		return []string{"desktop_macos"}
 	case "linux":
+		if pkg == linuxPkgRPM {
+			if goarch == "arm64" {
+				return []string{"desktop_linux_arm64_rpm"}
+			}
+			return []string{"desktop_linux_rpm"}
+		}
 		if pkg == linuxPkgDeb {
 			if goarch == "arm64" {
 				return []string{"desktop_linux_arm64_deb"}
@@ -488,6 +494,9 @@ func assetExt() string {
 		if linuxPackage() == linuxPkgDeb {
 			return ".deb"
 		}
+		if linuxPackage() == linuxPkgRPM {
+			return ".rpm"
+		}
 		return ".tar.gz"
 	}
 }
@@ -506,8 +515,8 @@ func (a *App) ApplyUpdate(downloadedPath string) error {
 		a.logger.Info("app update: winget-managed install, refusing the in-place swap", "file", downloadedPath)
 		return errWingetManaged
 	}
-	if linuxPackage() == linuxPkgDeb {
-		return a.applyLinuxDeb(downloadedPath)
+	if pkg := linuxPackage(); pkg != linuxPkgNone {
+		return a.applyLinuxPackage(downloadedPath, pkg)
 	}
 	switch runtime.GOOS {
 	case "darwin":
@@ -618,16 +627,15 @@ func (a *App) applyLinux(tgz string) error {
 	return nil
 }
 
-// applyLinuxDeb hands the downloaded .deb to the system's package installer
-// (GNOME Software, Discover, gdebi, whatever opens .deb files here), which asks
-// for the password and upgrades the package over the running copy. The user
-// starts the new version afterwards; the banner says so.
-func (a *App) applyLinuxDeb(deb string) error {
-	if !strings.HasSuffix(strings.ToLower(deb), ".deb") {
-		return fmt.Errorf("expected a .deb for this installation, got %s", filepath.Base(deb))
+// applyLinuxPackage opens the update in the desktop package installer, which
+// authenticates the upgrade. Package-owned binaries are never self-replaced.
+func (a *App) applyLinuxPackage(path, pkg string) error {
+	ext := "." + pkg
+	if !strings.HasSuffix(strings.ToLower(path), ext) {
+		return fmt.Errorf("expected a %s for this installation, got %s", ext, filepath.Base(path))
 	}
-	a.logger.Info("app update: handing the .deb to the package installer", "file", deb)
-	return exec.Command("xdg-open", deb).Start()
+	a.logger.Info("app update: handing package to the package installer", "file", path)
+	return exec.Command("xdg-open", path).Start()
 }
 
 // relaunchAndQuit launches the replaced binary AFTER this process has fully

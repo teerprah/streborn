@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +19,8 @@ func TestUpdateAssetKeysLinuxByArch(t *testing.T) {
 	}{
 		{"amd64", linuxPkgNone, []string{"desktop_linux"}},
 		{"arm64", linuxPkgNone, []string{"desktop_linux_arm64"}},
+		{"amd64", linuxPkgRPM, []string{"desktop_linux_rpm"}},
+		{"arm64", linuxPkgRPM, []string{"desktop_linux_arm64_rpm"}},
 		{"amd64", linuxPkgDeb, []string{"desktop_linux_deb"}},
 		{"arm64", linuxPkgDeb, []string{"desktop_linux_arm64_deb"}},
 	}
@@ -68,6 +71,28 @@ func TestDetectLinuxPackage(t *testing.T) {
 		}
 		if got := detectLinuxPackage("/usr/bin/st-reborn", info); got != linuxPkgDeb {
 			t.Fatalf("arch-qualified list: got %q", got)
+		}
+	}
+}
+
+func TestDetectRPMPackage(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"st-reborn", nil, linuxPkgRPM},
+		{"st-reborn-extras", nil, linuxPkgNone},
+		{"", errors.New("not owned or rpm unavailable"), linuxPkgNone},
+	} {
+		got := detectRPMPackage("/usr/bin/st-reborn", func(path string) (string, error) {
+			if path != "/usr/bin/st-reborn" {
+				t.Fatalf("queried wrong executable: %s", path)
+			}
+			return c.name, c.err
+		})
+		if got != c.want {
+			t.Errorf("owner %q: got %q, want %q", c.name, got, c.want)
 		}
 	}
 }
